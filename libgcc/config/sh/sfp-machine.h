@@ -102,6 +102,9 @@ typedef int __gcc_CMPtype __attribute__ ((mode (__libgcc_cmp_return__)));
 /* Rounding modes */
 #define	FP_RND_NEAREST 0x0000
 #define	FP_RND_ZERO		 0x0001
+/* Hardware does not support PINF/MINF, those are just placeholders. */
+#define FP_RND_PINF		 0x0002
+#define FP_RND_MINF		 0x0003
 
 #define FP_INIT_ROUNDMODE _FPU_GETCW(_fcsr)
 #define FP_ROUNDMODE (_fcsr & FP_RND_MASK)
@@ -109,9 +112,8 @@ typedef int __gcc_CMPtype __attribute__ ((mode (__libgcc_cmp_return__)));
 
 #define FP_HANDLE_EXCEPTIONS				\
   do {							\
-    _fcsr &= ~(FP_EX_ALL << FP_EX_CAUSE_SHIFT);		\
-    _fcsr |= _fex | (_fex << FP_EX_CAUSE_SHIFT);	\
-    _FPU_SETCW (_fcsr);			\
+    if (__builtin_expect (_fex, 0))			\
+      __sfp_handle_exceptions (_fex);			\
   } while (0)
 #else
 #define FP_EX_INVALID (1 << 4)

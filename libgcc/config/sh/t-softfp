@@ -1,0 +1,2 @@
+# Soft float configuration for PA64
+LIB2ADD += $(srcdir)/config/pa/sfp-exceptions.c
