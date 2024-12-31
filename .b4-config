@@ -1,4 +1,10 @@
 [b4]
     midmask = https://inbox.sourceware.org/%s
     linkmask = https://inbox.sourceware.org/%s
+    pw-url = https://patchwork.sourceware.org/
+    pw-project = gcc
     send-series-to = gcc-patches@gcc.gnu.org
+    prep-perpatch-check-cmd = ./contrib/check_GNU_style.py -
+    prep-perpatch-check-cmd = ./contrib/gcc-changelog/git_email.py -q -v -
+    am-perpatch-check-cmd = ./contrib/check_GNU_style.py -
+    am-perpatch-check-cmd = ./contrib/gcc-changelog/git_email.py -q -v -
