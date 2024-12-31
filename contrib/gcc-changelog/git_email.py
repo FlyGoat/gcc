@@ -21,6 +21,8 @@
 import os
 import re
 import sys
+import argparse
+import tempfile
 from itertools import takewhile
 
 from dateutil.parser import parse
@@ -91,54 +93,98 @@ class GitEmail(GitCommit):
         git_info = GitInfo(None, date, author, message, modified_files)
         super().__init__(git_info, commit_to_info_hook=None)
 
-
-def show_help():
-    print("""usage: git_email.py [--help] [patch file ...]
-
-Check git ChangeLog format of a patch
-
-With zero arguments, process every patch file in the
-./patches directory.
-With one argument, process the named patch file.
-
-Patch files must be in 'git format-patch' format.""")
-    sys.exit(0)
-
-
 if __name__ == '__main__':
-    if len(sys.argv) == 2 and (sys.argv[1] == '-h' or sys.argv[1] == '--help'):
-        show_help()
+    parser = argparse.ArgumentParser(
+        description=('Check git ChangeLog format of a patch.\n'
+                     'Patch files must be in \'git format-patch\' format.'),
+        formatter_class=argparse.RawTextHelpFormatter
+    )
+    parser.add_argument(
+        'files', 
+        nargs='*', 
+        help=('Patch files to process.\n'
+              'Use "-" to read from stdin.\n'
+              'If none provided, processes all files in ./patches directory')
+    )
+    parser.add_argument('-p', '--print-changelog', action='store_true',
+                        help='Print final changelog entires')
+    parser.add_argument('-q', '--quiet', action='store_true',
+                        help='Don\'t print "OK" and summary messages')
+    parser.add_argument('-v', '--verbose', action='store_true',
+                        help='Print verbose information')
+    args = parser.parse_args()
 
-    if len(sys.argv) == 1:
+    batch_mode = False
+    tmp = None
+
+    if not args.files:
+        # Process all files in patches directory
         allfiles = []
         for root, _dirs, files in os.walk('patches'):
             for f in files:
                 full = os.path.join(root, f)
                 allfiles.append(full)
-
-        success = 0
-        for full in sorted(allfiles):
-            email = GitEmail(full)
-            print(email.filename)
-            if email.success:
-                success += 1
-                print('  OK')
-                for warning in email.warnings:
-                    print('  WARN: %s' % warning)
-            else:
-                for error in email.errors:
-                    print('  ERR: %s' % error)
-
-        print()
-        print('Successfully parsed: %d/%d' % (success, len(allfiles)))
+        
+        files_to_process = sorted(allfiles)
+        batch_mode = True
     else:
-        email = GitEmail(sys.argv[1])
-        if email.success:
-            print('OK')
-            email.print_output()
-            email.print_warnings()
+        # Handle filelist or stdin
+        if args.files[0] == '-':
+            tmp = tempfile.NamedTemporaryFile(mode='w+', delete=False)
+            tmp.write(sys.stdin.read())
+            tmp.flush()
+            tmp.close()
+            files_to_process = [tmp.name]
         else:
+            files_to_process = args.files
+
+    success = 0
+    fail = 0
+    total = len(files_to_process)
+    batch_mode = batch_mode or total > 1
+
+    if total == 0:
+        print('No files to process', file=sys.stderr)
+        parser.print_help()
+        sys.exit(1)
+
+    for full in files_to_process:
+        email = GitEmail(full)
+
+        res = 'OK' if email.success else 'FAILED'
+        have_message = not email.success or (email.warnings and args.verbose)
+        if not args.quiet or have_message:
+            filename = '-' if tmp else email.filename
+            print('Checking %s: %s' % (filename, res))
+
+        if email.success:
+            success += 1
+            if args.verbose:
+                for warning in email.warnings:
+                    print('WARN: %s' % warning)
+            if args.print_changelog:
+                    email.print_output()
+        else:
+            fail += 1
             if not email.info.lines:
-                print('Error: patch contains no parsed lines', file=sys.stderr)
-            email.print_errors()
-            sys.exit(1)
+                print('ERR: patch contains no parsed lines')
+                continue
+            if args.verbose:
+                for warning in email.warnings:
+                    print('WARN: %s' % warning)
+            for error in email.errors:
+                print('ERR: %s' % error)
+        
+        if have_message or batch_mode:
+            print()
+
+    if batch_mode and not args.quiet:
+        print('Successfully parsed: %d/%d' % (success, total))
+
+    if tmp:
+        try:
+            os.unlink(tmp.name)
+        except OSError:
+            pass
+
+    sys.exit(fail > 0)
